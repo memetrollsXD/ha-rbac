@@ -11,6 +11,7 @@ from . import record
 from .const import (
     CONF_BIND_ADDRESS,
     CONF_MANAGE_HTTP,
+    CONF_OIDC_AUTO_ASSIGN,
     CONF_PROXY_PORT,
     CONF_RESTORE_ON_REMOVAL,
     CONF_UPSTREAM_HOST,
@@ -449,6 +450,7 @@ _SETTING_DEFAULTS = {
     CONF_UPSTREAM_HOST: DEFAULT_UPSTREAM_HOST,
     CONF_UPSTREAM_PORT: DEFAULT_UPSTREAM_PORT,
     CONF_MANAGE_HTTP: False,
+    CONF_OIDC_AUTO_ASSIGN: True,
     CONF_RESTORE_ON_REMOVAL: DEFAULT_RESTORE_ON_REMOVAL,
 }
 
@@ -495,6 +497,7 @@ def handle_settings_get(
         vol.Optional(CONF_UPSTREAM_HOST): str,
         vol.Optional(CONF_UPSTREAM_PORT): vol.All(int, vol.Range(min=1, max=65535)),
         vol.Optional(CONF_MANAGE_HTTP): bool,
+        vol.Optional(CONF_OIDC_AUTO_ASSIGN): bool,
         vol.Optional(CONF_RESTORE_ON_REMOVAL): bool,
     }
 )

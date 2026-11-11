@@ -58,7 +58,7 @@ async def test_deleting_a_role_unbinds_its_users(store: RbacStore) -> None:
     await store.async_delete_role(role["id"])
 
     assert store.bindings["user-1"] == [ROLE_USER]
-    # user-2 had no other role; the entry is dropped so the derived default applies
+    # user-2 had no other role; the entry is dropped and they remain denied.
     assert "user-2" not in store.bindings
 
 
@@ -69,7 +69,7 @@ async def test_binding_to_an_unknown_role_is_rejected(store: RbacStore) -> None:
 
 
 async def test_clearing_a_binding_removes_the_entry(store: RbacStore) -> None:
-    """An empty list means 'use the derived default', not 'no roles'."""
+    """An empty list removes the entry; non-administrators are denied."""
     await store.async_set_binding("user-1", [ROLE_USER])
     await store.async_set_binding("user-1", [])
     assert "user-1" not in store.bindings

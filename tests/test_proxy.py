@@ -17,6 +17,7 @@ from typing import Any
 import aiohttp
 import pytest
 from aiohttp import web
+from homeassistant.auth.models import Credentials
 from homeassistant.components.http import HomeAssistantView, StaticPathConfig
 from homeassistant.components.http.auth import async_sign_path
 from homeassistant.core import HomeAssistant
@@ -30,6 +31,7 @@ from custom_components.ha_rbac.decide import Decider
 from custom_components.ha_rbac.denylog import Denial, DenyLog
 from custom_components.ha_rbac.filters import REGISTRY
 from custom_components.ha_rbac.ingress import SESSION_ENDPOINT
+from custom_components.ha_rbac.oidc import OidcRoleAssigner
 from custom_components.ha_rbac.policy import Evaluator, Permissions
 from custom_components.ha_rbac.proxy import (
     MAX_BUFFERED_RESPONSE_SIZE,
@@ -533,6 +535,72 @@ async def test_rest_states_are_filtered(proxy_env: dict[str, Any]) -> None:
     entity_ids = {state["entity_id"] for state in payload}
     assert "light.kitchen" in entity_ids
     assert "lock.front" not in entity_ids
+
+
+@pytest.mark.parametrize("transport", ["http", "websocket"])
+async def test_linked_oidc_user_is_assigned_at_proxy_login(
+    proxy_env: dict[str, Any], transport: str
+) -> None:
+    """Linking emits no creation event, so either proxy entry path handles it."""
+    hass, store, proxy = proxy_env["hass"], proxy_env["store"], proxy_env["proxy"]
+    user, token = proxy_env["read_only_user"], proxy_env["read_only_token"]
+    user.credentials.append(Credentials("auth_oidc", None, {"sub": "linked"}))
+    role = await store.async_create_role(
+        {
+            "name": "Student",
+            "allow": {"entities": {"entity_ids": {"light.classroom": True}}},
+            "tiers": {"max": "user"},
+        }
+    )
+    store.async_add_listener(proxy._evaluator.invalidate)
+    proxy._evaluator.prepare_user = OidcRoleAssigner(hass, store).async_assign
+    hass.states.async_set("light.classroom", "on")
+    hass.states.async_set("lock.front", "locked")
+    assert not proxy._evaluator.async_permissions(user).check_entity(
+        "light.classroom", "read"
+    )
+    async with aiohttp.ClientSession() as session:
+        if transport == "http":
+            async with session.get(
+                f"{proxy_env['base']}/api/states",
+                headers={"Authorization": f"Bearer {token}"},
+            ) as response:
+                assert response.status == 200
+                states = await response.json()
+        else:
+            ws = await _ws_login(session, proxy_env["ws"], token)
+            await ws.send_json({"id": 1, "type": "get_states"})
+            result = await asyncio.wait_for(ws.receive_json(), timeout=5)
+            states = result["result"]
+            await ws.close()
+    assert store.bindings[user.id] == [role["id"]]
+    entity_ids = {state["entity_id"] for state in states}
+    assert "light.classroom" in entity_ids
+    assert "lock.front" not in entity_ids
+
+
+async def test_unassigned_oidc_user_cannot_retrieve_protected_states(
+    proxy_env: dict[str, Any],
+) -> None:
+    """Both proxy transports deny state access before a role is assigned."""
+    hass, store = proxy_env["hass"], proxy_env["store"]
+    user, token = proxy_env["read_only_user"], proxy_env["read_only_token"]
+    user.credentials.append(Credentials("auth_oidc", None, {"sub": "unassigned"}))
+    hass.states.async_set("lock.front", "locked")
+    assert user.id not in store.bindings
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+            f"{proxy_env['base']}/api/states",
+            headers={"Authorization": f"Bearer {token}"},
+        ) as response:
+            assert response.status in (401, 403)
+
+        ws = await _ws_login(session, proxy_env["ws"], token)
+        await ws.send_json({"id": 1, "type": "get_states"})
+        result = await asyncio.wait_for(ws.receive_json(), timeout=5)
+        assert result["success"] is False
+        await ws.close()
 
 
 async def test_rest_control_is_denied_for_read_only(

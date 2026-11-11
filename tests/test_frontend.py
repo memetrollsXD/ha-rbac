@@ -57,8 +57,7 @@ def test_every_element_the_panel_looks_up_is_one_it_renders() -> None:
 def test_deleting_a_role_asks_first() -> None:
     """Delete is the one button in the panel that cannot be taken back.
 
-    Its holders fall back to their Home Assistant group the moment it lands, so
-    a misplaced click hands someone the whole instance. Every other action here
+    Its holders lose their role the moment it lands. Every other action here
     is editable afterwards, which is why this is the only one pinned: the
     confirmation is easy to drop in a refactor and nothing else would notice.
     """

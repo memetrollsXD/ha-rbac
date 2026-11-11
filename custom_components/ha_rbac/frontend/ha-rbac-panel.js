@@ -2109,8 +2109,7 @@ class HaRbacPanel extends HTMLElement {
           : "";
         const fallback = user.role_ids.length
           ? ""
-          : `<div class="hint" style="margin:6px 0 0">Unassigned, so they keep the
-             access Home Assistant already gives them (${user.is_admin ? "Administrator" : "User"}).</div>`;
+          : `<div class="hint" style="margin:6px 0 0">${user.is_admin ? "Unassigned administrator: Administrator role applies." : "Unassigned: no protected resource access."}</div>`;
         return `<tr>
           <td>${esc(user.name || user.user_id)} ${note}</td>
           <td><div class="checks">${boxes}</div>${fallback}</td>
@@ -2121,9 +2120,9 @@ class HaRbacPanel extends HTMLElement {
     return `<ha-card>
       <div class="card-content">
         <h2>Users</h2>
-        <p class="hint">Anyone unassigned keeps exactly the
-          access Home Assistant already gives them, so you can roll this out one
-          person at a time. The owner is always unrestricted, and that is the way
+        <p class="hint">Unassigned non-administrators have no protected resource
+          access. Unassigned administrators keep their Administrator role.
+          The owner is always unrestricted, and that is the way
           back in if a role locks you out.</p>
         <table><thead><tr><th>Person</th><th>Role</th></tr></thead><tbody>${rows}</tbody></table>
         <div class="actions"><ha-button id="save-bindings">Save</ha-button></div>
@@ -2149,6 +2148,14 @@ class HaRbacPanel extends HTMLElement {
         <p class="hint">Changing any of these restarts the listener, which drops
           the connection this page is using. Reload afterwards.</p>
         <div id="settings-fields"></div>
+
+        <h3>OIDC users</h3>
+        <p class="hint">Assign the existing Student role to unassigned OIDC users.
+          The role must be created and configured first.</p>
+        <div class="field"><div class="check">
+          <ha-switch id="set-oidc-auto-assign" ${s.oidc_auto_assign ? "checked" : ""}></ha-switch>
+          <span class="check-label">Automatically assign Student</span>
+        </div></div>
 
         <h3>Network lockdown</h3>
         <p class="hint">When enabled, Home Assistant is moved to answer only on
@@ -2877,7 +2884,7 @@ class HaRbacPanel extends HTMLElement {
     this._guard(async () => {
       await this._call("roles/delete", { role_id: this._selected });
       this._selected = null;
-    }, "Role deleted; anyone who had it falls back to their Home Assistant group.");
+    }, "Role deleted; unassigned non-administrators have no access.");
   }
 
   _saveBindings() {
@@ -2915,6 +2922,8 @@ class HaRbacPanel extends HTMLElement {
     if (restore) changes.restore_network_on_removal = restore.checked;
     const manageHttp = root.getElementById("set-manage-http");
     if (manageHttp) changes.manage_http = manageHttp.checked;
+    const oidcAutoAssign = root.getElementById("set-oidc-auto-assign");
+    if (oidcAutoAssign) changes.oidc_auto_assign = oidcAutoAssign.checked;
 
     try {
       const result = await this._call("settings/set", changes);

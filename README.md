@@ -2,7 +2,7 @@
 
 <p align="center">
   <strong>Give everyone in the house their own Home Assistant.</strong><br>
-  Guests see the lights. Kids get their own dashboard. Nobody but you touches the locks, the add-ons, or the settings.
+  Guests see the lights. Kids get their own dashboard. Nobody but you touches the locks, the add-ons, or the settings. This fork gives new OIDC users a default role (student) for a personal project.
 </p>
 
 <p align="center">
@@ -84,7 +84,7 @@ Four roles to start from: **Administrator**, **Editor**, **User** and **Read onl
 
 ### Quick install (HACS button)
 
-<a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=FezVrasta&repository=ha-rbac&category=integration"><img src="https://my.home-assistant.io/badges/hacs_repository.svg" alt="Open your Home Assistant instance and open a repository inside the Home Assistant Community Store."></a>
+<a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=memetrollsXD&repository=ha-rbac&category=integration"><img src="https://my.home-assistant.io/badges/hacs_repository.svg" alt="Open your Home Assistant instance and open a repository inside the Home Assistant Community Store."></a>
 
 That button adds this to HACS. **Download**, restart, then add **Access Control** from Settings → Devices & Services and say yes when it offers to move Home Assistant for you.
 
@@ -111,7 +111,7 @@ If the button above doesn't work, you can add this repository manually to HACS:
 
 1. Open **HACS** in Home Assistant
 2. Click the menu (⋮) and select **Custom repositories**
-3. Add the repository URL: `https://github.com/FezVrasta/ha-rbac`
+3. Add the repository URL: `https://github.com/memetrollsXD/ha-rbac`
 4. Select **Integration** as the category
 5. Click **Create**
 6. Click the new **Access Control** card
@@ -123,7 +123,7 @@ If the button above doesn't work, you can add this repository manually to HACS:
 
 If you prefer to install manually:
 
-1. Download the latest release from the [releases page](https://github.com/FezVrasta/ha-rbac/releases)
+1. Download the latest release from the [releases page](https://github.com/memetrollsXD/ha-rbac/releases)
 2. Extract the `ha_rbac` folder
 3. Copy it to your Home Assistant `config/custom_components/` directory
 4. Restart Home Assistant
@@ -137,9 +137,39 @@ If you prefer to install manually:
 
 Have them reload. Their Home Assistant is now smaller.
 
-Nothing changes for anyone until you give them a role, so you can do this one person at a time.
+**Upgrade notice:** unassigned non-administrators, including existing local
+users, now have no protected resource access. Assign them an appropriate role
+before upgrading. Unassigned Home Assistant administrators retain the built-in
+Administrator role; explicitly assigned roles still apply to them.
 
 Not sure what to allow? Hit **Record what this role needs**, let them use Home Assistant normally for a few minutes, and stop. Everything they touched is added to the role, so you build it from what they actually use instead of guessing and then chasing what broke. While it records they have full access, and the panel says so.
+
+## Automatic Student role for OIDC
+
+1. In **Access Control → Roles**, create or copy a role and name it exactly
+   **Student**. Configure its entity, dashboard, and command permissions and
+   save it. The integration never creates this role or decides its permissions.
+2. With automatic assignment enabled (the default), a non-owner,
+   non-system-generated, non-administrator user with an `auth_oidc` credential
+   and no RBAC role is assigned Student. This covers new users, existing users
+   at integration startup, and existing users linked to OIDC when they next
+   access the proxy. The credential's provider type is used, not a name or email.
+3. Existing nonempty role assignments are preserved. Removing all of an OIDC
+   user's roles makes them eligible for automatic assignment again; assign a
+   different role instead if they should not receive Student.
+
+To disable this feature, turn off **Automatically assign Student** in
+**Access Control → Settings** (or the integration's options). Disabled users
+still need an explicit role; disabling assignment does not restore the old
+unrestricted fallback. If Student is missing or multiple roles have that name,
+an error is logged and affected users remain unassigned and denied. Create one
+Student role and have them reconnect, or reload the integration to retry.
+
+Home Assistant administrators and the owner are intentionally excluded: ensure
+your OIDC provider provisions students as non-administrators. The deny guarantee
+applies to the proxy's enforcement boundary, not requests bypassing it. Keep
+Home Assistant's upstream listener inaccessible to users, disable Cloud Remote
+UI, and review the other exclusions described below.
 
 ## Good to know
 

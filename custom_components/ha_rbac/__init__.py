@@ -29,11 +29,12 @@ from homeassistant.helpers import (
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.loader import async_get_integration
 
-from . import discovery, http_config, websocket_api
+from . import discovery, http_config, oidc, websocket_api
 from .catalog import Catalog
 from .const import (
     CONF_BIND_ADDRESS,
     CONF_MANAGE_HTTP,
+    CONF_OIDC_AUTO_ASSIGN,
     CONF_PROXY_PORT,
     CONF_RESTORE_ON_REMOVAL,
     CONF_UPSTREAM_HOST,
@@ -129,6 +130,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DATA_RBAC] = data
 
     store.async_add_listener(evaluator.invalidate)
+    if config.get(CONF_OIDC_AUTO_ASSIGN, True):
+        assigner = oidc.OidcRoleAssigner(hass, store)
+        evaluator.prepare_user = assigner.async_assign
+        data.unsubscribes.append(oidc.async_listen(hass, assigner))
+        await assigner.async_scan()
     for event_type in REGISTRY_EVENTS:
         data.unsubscribes.append(
             hass.bus.async_listen(event_type, evaluator.invalidate)

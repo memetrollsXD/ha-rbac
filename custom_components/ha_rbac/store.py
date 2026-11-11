@@ -4,6 +4,7 @@ Home Assistant has no group CRUD API, so `.storage/auth` is left alone entirely
 and this integration keeps its own store.
 """
 
+import asyncio
 import logging
 import uuid
 from typing import Any
@@ -31,6 +32,8 @@ class RbacStore:
         self.bindings: dict[str, list[str]] = {}
         self.global_deny: dict[str, dict[str, Any]] = {}
         self._listeners: list[Any] = []
+        self._write_lock = asyncio.Lock()
+        self.pending_bindings: set[str] = set()
 
     async def async_load(self) -> None:
         """Load from disk, seeding the predefined roles."""
@@ -91,6 +94,11 @@ class RbacStore:
 
     async def async_create_role(self, role: dict[str, Any]) -> dict[str, Any]:
         """Create a custom role."""
+        async with self._write_lock:
+            return await self._async_create_role(role)
+
+    async def _async_create_role(self, role: dict[str, Any]) -> dict[str, Any]:
+        """Create a role while holding the write lock."""
         role = dict(role)
         role.setdefault("id", uuid.uuid4().hex)
         role["system_generated"] = False
@@ -118,6 +126,13 @@ class RbacStore:
         self, role_id: str, changes: dict[str, Any]
     ) -> dict[str, Any]:
         """Update a custom role."""
+        async with self._write_lock:
+            return await self._async_update_role(role_id, changes)
+
+    async def _async_update_role(
+        self, role_id: str, changes: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Update a role while holding the write lock."""
         existing = self.roles.get(role_id)
         if existing is None:
             raise KeyError(role_id)
@@ -132,42 +147,74 @@ class RbacStore:
 
     async def async_delete_role(self, role_id: str) -> None:
         """Delete a custom role and unbind every user from it."""
-        existing = self.roles.get(role_id)
-        if existing is None:
-            raise KeyError(role_id)
-        if existing.get("system_generated"):
-            raise ValueError(f"{role_id} is a predefined role and cannot be deleted")
+        async with self._write_lock:
+            existing = self.roles.get(role_id)
+            if existing is None:
+                raise KeyError(role_id)
+            if existing.get("system_generated"):
+                raise ValueError(
+                    f"{role_id} is a predefined role and cannot be deleted"
+                )
 
-        del self.roles[role_id]
-        for user_id, role_ids in list(self.bindings.items()):
-            if role_id in role_ids:
-                remaining = [r for r in role_ids if r != role_id]
-                # An empty binding would silently fall back to the derived
-                # default, so drop the entry and make that explicit.
-                if remaining:
-                    self.bindings[user_id] = remaining
-                else:
-                    del self.bindings[user_id]
-        await self._async_save()
+            del self.roles[role_id]
+            for user_id, role_ids in list(self.bindings.items()):
+                if role_id in role_ids:
+                    remaining = [r for r in role_ids if r != role_id]
+                    if remaining:
+                        self.bindings[user_id] = remaining
+                    else:
+                        del self.bindings[user_id]
+            await self._async_save()
 
     async def async_set_binding(self, user_id: str, role_ids: list[str]) -> None:
         """Bind a user to a set of roles."""
-        unknown = [role_id for role_id in role_ids if role_id not in self.roles]
-        if unknown:
-            raise KeyError(f"unknown roles: {', '.join(unknown)}")
+        async with self._write_lock:
+            unknown = [role_id for role_id in role_ids if role_id not in self.roles]
+            if unknown:
+                raise KeyError(f"unknown roles: {', '.join(unknown)}")
 
-        if role_ids:
-            self.bindings[user_id] = list(role_ids)
-        else:
-            self.bindings.pop(user_id, None)
-        await self._async_save()
+            if role_ids:
+                self.bindings[user_id] = list(role_ids)
+            else:
+                self.bindings.pop(user_id, None)
+            await self._async_save()
+
+    async def async_assign_if_unbound(
+        self, user_id: str, role_id: str, role_name: str
+    ) -> bool:
+        """Persist a role only if no binding exists, without granting on failure."""
+        async with self._write_lock:
+            if self.bindings.get(user_id):
+                return False
+            matches = [
+                key for key, role in self.roles.items() if role.get("name") == role_name
+            ]
+            if matches != [role_id]:
+                raise ValueError(f"role {role_name!r} changed during assignment")
+            previous = self.bindings.get(user_id)
+            self.pending_bindings.add(user_id)
+            self.bindings[user_id] = [role_id]
+            try:
+                await self._async_save()
+            except BaseException:
+                if previous is None:
+                    self.bindings.pop(user_id, None)
+                else:
+                    self.bindings[user_id] = previous
+                self._notify()
+                raise
+            finally:
+                self.pending_bindings.discard(user_id)
+            self._notify()
+            return True
 
     async def async_set_global_deny(
         self, user_id: str, policy: dict[str, Any] | None
     ) -> None:
         """Set or clear a per-user denial that outranks every role."""
-        if policy:
-            self.global_deny[user_id] = policy
-        else:
-            self.global_deny.pop(user_id, None)
-        await self._async_save()
+        async with self._write_lock:
+            if policy:
+                self.global_deny[user_id] = policy
+            else:
+                self.global_deny.pop(user_id, None)
+            await self._async_save()

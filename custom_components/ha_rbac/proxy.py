@@ -579,6 +579,8 @@ class RbacProxy:
     async def _handle_http(self, request: web.Request) -> web.StreamResponse:
         """Proxy one HTTP request, filtering the response where needed."""
         user = await self._resolve_user(request)
+        if user is not None and self._evaluator.prepare_user is not None:
+            await self._evaluator.prepare_user(user)
         permissions = self._evaluator.async_permissions(user)
 
         decision = Decision(allowed=True)
@@ -1222,6 +1224,8 @@ class _WsSession:
         if refresh_token is None:
             return
         self._user = refresh_token.user
+        if self._evaluator.prepare_user is not None:
+            await self._evaluator.prepare_user(self._user)
         self._permissions = self._evaluator.async_permissions(self._user)
         # A revoked token must not leave a filtered connection alive, since the
         # permissions were resolved once at authentication time.

@@ -22,6 +22,7 @@ from . import http_config
 from .const import (
     CONF_BIND_ADDRESS,
     CONF_MANAGE_HTTP,
+    CONF_OIDC_AUTO_ASSIGN,
     CONF_PROXY_PORT,
     CONF_RESTORE_ON_REMOVAL,
     CONF_UPSTREAM_HOST,
@@ -39,7 +40,11 @@ from .util import async_upstream_is_loopback_only, is_loopback_bind
 
 
 def _schema(
-    defaults: dict[str, Any], *, manage: bool = False, moved: bool = False
+    defaults: dict[str, Any],
+    *,
+    manage: bool = False,
+    moved: bool = False,
+    options: bool = False,
 ) -> vol.Schema:
     """Return the configuration schema.
 
@@ -72,6 +77,13 @@ def _schema(
         fields[
             vol.Required(
                 CONF_MANAGE_HTTP, default=defaults.get(CONF_MANAGE_HTTP, False)
+            )
+        ] = BooleanSelector()
+    if options:
+        fields[
+            vol.Required(
+                CONF_OIDC_AUTO_ASSIGN,
+                default=defaults.get(CONF_OIDC_AUTO_ASSIGN, True),
             )
         ] = BooleanSelector()
     if moved:
@@ -252,6 +264,13 @@ class RbacOptionsFlow(OptionsFlow):
                         CONF_UPSTREAM_HOST: user_input[CONF_UPSTREAM_HOST],
                         CONF_UPSTREAM_PORT: upstream_port,
                         CONF_MANAGE_HTTP: user_input.get(CONF_MANAGE_HTTP, False),
+                        CONF_OIDC_AUTO_ASSIGN: user_input.get(
+                            CONF_OIDC_AUTO_ASSIGN,
+                            self.config_entry.options.get(
+                                CONF_OIDC_AUTO_ASSIGN,
+                                self.config_entry.data.get(CONF_OIDC_AUTO_ASSIGN, True),
+                            ),
+                        ),
                         CONF_RESTORE_ON_REMOVAL: user_input.get(
                             CONF_RESTORE_ON_REMOVAL, DEFAULT_RESTORE_ON_REMOVAL
                         ),
@@ -268,6 +287,7 @@ class RbacOptionsFlow(OptionsFlow):
             data_schema=_schema(
                 current,
                 manage=await http_config.async_can_manage(self.hass),
+                options=True,
                 # Only worth asking where there is something to put back.
                 moved=bool(self.config_entry.data.get(DATA_PREVIOUS_HTTP)),
             ),

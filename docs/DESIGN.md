@@ -181,7 +181,7 @@ ssh -L 8124:127.0.0.1:8124 <your-ha-host>
 # then browse http://localhost:8124 for unfiltered stock Home Assistant
 ```
 
-Or delete `.storage/ha_rbac.roles` and restart to return to derived defaults. If the integration itself fails to load, nothing answers on either port, and the setting has to be undone instead: remove `server_host` from the `stable` block of `.storage/http` and restart.
+Deleting `.storage/ha_rbac.roles` removes all custom roles and bindings: unassigned non-administrators are denied, not returned to their former Home Assistant permissions. If the integration itself fails to load, nothing answers on either port, and the setting has to be undone instead: remove `server_host` from the `stable` block of `.storage/http` and restart.
 
 Removing or disabling the integration does that undoing for you. Stopping the proxy frees the address but leaves Home Assistant on loopback, so on its own it would take the instance off the network entirely and getting back in would need a shell. So the move is reversed and Home Assistant restarts onto the address it answered on before, using the snapshot taken when it was moved. The restore is promoted straight to stable rather than staged: a staged config is a trial that reverts unless something confirms it, and the thing that would confirm it is the integration being removed. An installation moved by a build older than this has no snapshot, so the port the proxy is on is used instead, which is the address Home Assistant was on by definition. Turn it off per entry with **Put Home Assistant back on its original address** if you would rather it stayed put.
 

@@ -18,6 +18,7 @@ from custom_components.ha_rbac.config_flow import RbacConfigFlow, RbacOptionsFlo
 from custom_components.ha_rbac.const import (
     CONF_BIND_ADDRESS,
     CONF_MANAGE_HTTP,
+    CONF_OIDC_AUTO_ASSIGN,
     CONF_PROXY_PORT,
     CONF_UPSTREAM_HOST,
     CONF_UPSTREAM_PORT,
@@ -248,6 +249,19 @@ async def test_a_valid_reconfigure_is_saved(options: RbacOptionsFlow) -> None:
     assert step["type"] is FlowResultType.CREATE_ENTRY
     assert step["data"][CONF_PROXY_PORT] == 9000
     assert step["data"][CONF_UPSTREAM_PORT] == PORTS[CONF_UPSTREAM_PORT]
+
+
+async def test_oidc_assignment_option_is_available_without_http_management(
+    options: RbacOptionsFlow,
+) -> None:
+    """The assignment switch is independent of the HTTP management option."""
+    with patch(
+        "custom_components.ha_rbac.http_config.async_can_manage", return_value=False
+    ):
+        step = await options.async_step_init()
+    assert _default(step, CONF_OIDC_AUTO_ASSIGN) is True
+    step = await options.async_step_init({**PORTS, CONF_OIDC_AUTO_ASSIGN: False})
+    assert step["data"][CONF_OIDC_AUTO_ASSIGN] is False
 
 
 async def test_the_wizard_refuses_an_instance_holding_its_own_certificate(

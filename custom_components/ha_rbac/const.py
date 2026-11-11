@@ -16,6 +16,7 @@ CONF_PROXY_PORT: Final = "proxy_port"
 CONF_BIND_ADDRESS: Final = "bind_address"
 CONF_UPSTREAM_HOST: Final = "upstream_host"
 CONF_UPSTREAM_PORT: Final = "upstream_port"
+CONF_OIDC_AUTO_ASSIGN: Final = "oidc_auto_assign"
 # Whether this integration moves Home Assistant's own listener for you.
 CONF_MANAGE_HTTP: Final = "manage_http"
 # Put Home Assistant back where it was if this integration is removed or

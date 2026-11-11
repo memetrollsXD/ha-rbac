@@ -8,6 +8,8 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from homeassistant.auth.const import GROUP_ID_USER
+from homeassistant.auth.models import Credentials
 from homeassistant.auth.permissions.const import CAT_ENTITIES, POLICY_READ
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady
@@ -18,6 +20,7 @@ from custom_components.ha_rbac.catalog import Catalog
 from custom_components.ha_rbac.const import (
     CONF_BIND_ADDRESS,
     CONF_MANAGE_HTTP,
+    CONF_OIDC_AUTO_ASSIGN,
     CONF_PROXY_PORT,
     CONF_UPSTREAM_HOST,
     CONF_UPSTREAM_PORT,
@@ -97,6 +100,63 @@ async def test_unload_releases_everything(
     assert await async_unload_entry(hass, entry)
     await hass.async_block_till_done()
     assert DATA_RBAC not in hass.data
+
+
+async def test_existing_oidc_user_is_assigned_on_entry_setup(
+    hass: HomeAssistant, entry: MockConfigEntry
+) -> None:
+    """Setup scans users already linked before the integration starts."""
+    data = hass.data[DATA_RBAC]
+    role = await data.store.async_create_role({"name": "Student"})
+    await hass.auth.async_create_user("Owner", group_ids=["system-admin"])
+    user = await hass.auth.async_create_user("Existing", group_ids=[GROUP_ID_USER])
+    await hass.async_block_till_done()
+    await hass.auth.async_link_user(
+        user, Credentials("auth_oidc", None, {"sub": "existing"})
+    )
+    assert user.id not in data.store.bindings
+    await async_unload_entry(hass, entry)
+    assert await async_setup_entry(hass, entry)
+    assert hass.data[DATA_RBAC].store.bindings[user.id] == [role["id"]]
+
+
+async def test_oidc_assignment_can_be_disabled(
+    hass: HomeAssistant, socket_enabled: None
+) -> None:
+    """Disabling the setting skips both startup migration and events."""
+    for domain in ("http", "websocket_api"):
+        await async_setup_component(hass, domain, {"http": {}})
+    store = RbacStore(hass)
+    await store.async_load()
+    await store.async_create_role({"name": "Student"})
+    await hass.auth.async_create_user("Owner", group_ids=["system-admin"])
+    user = await hass.auth.async_create_user("Existing", group_ids=[GROUP_ID_USER])
+    await hass.auth.async_link_user(
+        user, Credentials("auth_oidc", None, {"sub": "existing"})
+    )
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_PROXY_PORT: _free_port(),
+            CONF_BIND_ADDRESS: "127.0.0.1",
+            CONF_UPSTREAM_HOST: "127.0.0.1",
+            CONF_UPSTREAM_PORT: 8123,
+        },
+        options={CONF_OIDC_AUTO_ASSIGN: False},
+    )
+    entry.add_to_hass(hass)
+    assert await async_setup_entry(hass, entry)
+    try:
+        hass.bus.async_fire("user_added", {"user_id": user.id})
+        await hass.async_block_till_done()
+        data = hass.data[DATA_RBAC]
+        assert user.id not in data.store.bindings
+        assert data.evaluator.prepare_user is None
+        assert not data.evaluator.async_permissions(user).check_entity(
+            "light.a", POLICY_READ
+        )
+    finally:
+        await async_unload_entry(hass, entry)
 
 
 async def test_setup_refuses_an_instance_that_terminates_tls(

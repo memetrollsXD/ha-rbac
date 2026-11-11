@@ -13,13 +13,14 @@ carve-out is written there instead -- grant the one entity rather than deny the
 domain and punch a hole in it.
 """
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from fnmatch import fnmatch
 from typing import Any
 
 import voluptuous as vol
+from homeassistant.auth.models import User
 from homeassistant.auth.permissions.const import (
     CAT_ENTITIES,
     POLICY_CONTROL,
@@ -1301,6 +1302,7 @@ class Evaluator:
         """Initialise the evaluator."""
         self._hass = hass
         self._store = store
+        self.prepare_user: Callable[[User], Awaitable[None]] | None = None
         self._dashboard_entities = dashboard_entities
         self._compiled: dict[str, CompiledRole] = {}
         # Keyed on the user and on which of their roles are currently in force,
@@ -1360,11 +1362,12 @@ class Evaluator:
         if user.is_owner or user.system_generated:
             return Permissions(pass_through=True)
 
+        if user.id in getattr(self._store, "pending_bindings", ()):
+            return Permissions()
+
         role_ids = self._store.bindings.get(user.id)
         if not role_ids:
-            # Unbound users fall back to their existing HA group, so installing
-            # the integration changes no behaviour until roles are assigned.
-            role_ids = [ROLE_ADMIN if user.is_admin else ROLE_USER]
+            role_ids = [ROLE_ADMIN] if user.is_admin else []
 
         now = dt_util.now()
         candidates = [
